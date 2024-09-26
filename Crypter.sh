@@ -1,40 +1,30 @@
 #!/bin/bash
 
 function display_help() {
-    echo "Usage: $0 [-c | -C <key> | -b | -r | -v <key> | -e | -h] <text>"
+    echo "Usage: $0"
     echo
     echo "Options:"
-    echo "  -c             Decrypt Caesar cipher using key 3"
-    echo "  -C <key>      Decrypt Caesar cipher using custom key"
-    echo "  -b             Decrypt Base64"
-    echo "  -r             Decrypt ROT13"
-    echo "  -v <key>      Decrypt Vigenère cipher"
-    echo "  -e             Decrypt Enigma cipher (placeholder)"
-    echo "  -h             Display this help message"
+    echo "  1  Decrypt Caesar cipher"
+    echo "  2  Decrypt Base64"
+    echo "  3  Decrypt ROT13"
+    echo "  4  Decrypt Vigenère cipher"
+    echo "  5  Decrypt Enigma machine"
+    echo "  h  Display this help message"
     exit 1
 }
 
-
 function decrypt_caesar() {
-    echo "$1" | tr 'A-Za-z' 'X-ZA-Wx-zay'  
-}
-
-
-function decrypt_caesar_custom() {
     local key=$1
     echo "$2" | tr "$(echo {A..Z})" "$(echo {A..Z} | cut -c$((26-key+1))-26)$(echo {A..Z} | cut -c1-$((26-key)))" | tr "$(echo {a..z})" "$(echo {a..z} | cut -c$((26-key+1))-26)$(echo {a..z} | cut -c1-$((26-key)))"
 }
-
 
 function decrypt_base64() {
     echo "$1" | base64 --decode
 }
 
-
 function decrypt_rot13() {
     echo "$1" | tr 'A-Za-z' 'N-ZA-Mn-za-m'
 }
-
 
 function decrypt_vigenere() {
     local key=$1
@@ -55,53 +45,98 @@ function decrypt_vigenere() {
     echo "$decrypted"
 }
 
+function decrypt_enigma() {
+    local message="$1"
+    local rotors=( "EKMFLGDQVZ" "AJDHSZXCNW" "BDFHJLCPRT" )
+    local reflector=( "YRUHQSLDPX" )
+    local rotor_positions=( 0 0 0 )
 
-if [[ $# -lt 2 ]]; then
-    display_help
-fi
+    rotate_rotors() {
+        rotor_positions[0]=$(( (rotor_positions[0] + 1) % 26 ))
+        for i in {0..2}; do
+            if [[ ${rotor_positions[i]} -eq 0 && $i -lt 2 ]]; then
+                rotor_positions[$((i + 1))]=$(( (rotor_positions[$((i + 1))] + 1) % 26 ))
+            fi
+        done
+    }
 
+    encode_character() {
+        local char="$1"
+        for i in {0..2}; do
+            index=$(( ( $(printf "%d" "'$char") - 65 + rotor_positions[i]) % 26 ))
+            char=${rotors[i]:index:1}
+            index=$(( ( $(printf "%d" "'$char") - 65 - rotor_positions[i] + 26 ) % 26 ))
+            char=$(printf \\$(printf '%03o' $((index + 65))))
+        done
 
-while getopts ":cC:b:r:v:e:h" opt; do
-    case $opt in
-        c)
-            decrypt_caesar "$2"
-            exit 0
-            ;;
-        C)
-            key=$OPTARG
-            decrypt_caesar_custom "$key" "$2"
-            exit 0
-            ;;
-        b)
-            decrypt_base64 "$2"
-            exit 0
-            ;;
-        r)
-            decrypt_rot13 "$2"
-            exit 0
-            ;;
-        v)
-            key=$OPTARG
-            decrypt_vigenere "$key" "$2"
-            exit 0
-            ;;
-        e)
-            echo "Enigma cipher decryption is not implemented."
-            exit 0
-            ;;
-        h)
-            display_help
-            ;;
-        \?)
-            echo "Invalid option: -$OPTARG" >&2
-            display_help
-            ;;
-        :)
-            echo "Option -$OPTARG requires an argument." >&2
-            display_help
-            ;;
-    esac
-done
+        char=${reflector[0]:$(($(printf "%d" "'$char") - 65)):1}
 
+        for i in {2..0}; do
+            index=$(( ( $(printf "%d" "'$char") - 65 + rotor_positions[i]) % 26 ))
+            for j in {0..25}; do
+                if [[ ${rotors[i]:j:1} == "$char" ]]; then
+                    index=$(( (j - rotor_positions[i] + 26) % 26 ))
+                    char=$(printf \\$(printf '%03o' $((index + 65))))
+                    break
+                fi
+            done
+        done
 
-display_help
+        echo "$char"
+    }
+
+    encoded=""
+    for (( i=0; i<${#message}; i++ )); do
+        char="${message:i:1}"
+        if [[ "$char" =~ [A-Z] ]]; then
+            rotate_rotors
+            encoded+=$(encode_character "$char")
+        else
+            encoded+="$char"
+        fi
+    done
+    echo "$encoded"
+}
+
+echo "Select decryption method:"
+echo "1. Decrypt Caesar cipher"
+echo "2. Decrypt Base64"
+echo "3. Decrypt ROT13"
+echo "4. Decrypt Vigenère cipher"
+echo "5. Decrypt Enigma machine"
+echo "h. Help"
+read -p "Enter your choice: " choice
+
+case $choice in
+    1)
+        read -p "Enter custom key: " key
+        read -p "Enter text to decrypt: " text
+        result=$(decrypt_caesar "$key" "$text")
+        ;;
+    2)
+        read -p "Enter Base64 encoded text: " text
+        result=$(decrypt_base64 "$text")
+        ;;
+    3)
+        read -p "Enter ROT13 text: " text
+        result=$(decrypt_rot13 "$text")
+        ;;
+    4)
+        read -p "Enter Vigenère key: " key
+        read -p "Enter text to decrypt: " text
+        result=$(decrypt_vigenere "$key" "$text")
+        ;;
+    5)
+        read -p "Enter text to decrypt with Enigma: " text
+        result=$(decrypt_enigma "$text")
+        ;;
+    h)
+        display_help
+        ;;
+    *)
+        echo "Invalid option."
+        exit 1
+        ;;
+esac
+
+echo "Decrypted result: $result"
